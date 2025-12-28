@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Activity Planner</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body class="bg-slate-100 min-h-screen">
+
+<!-- HEADER -->
+<div class="bg-white shadow border-b p-4 flex justify-between">
+  <h1 class="text-xl font-bold">Activity Planner</h1>
+  <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded">+ Add Task</button>
+</div>
+
+<!-- DATE FILTER -->
+<div class="p-4 bg-white m-4 rounded shadow flex gap-2">
+  <input type="date" id="startDate"/>
+  <input type="date" id="endDate"/>
+</div>
+
+<!-- TASK LIST -->
+<div id="tasksList" class="bg-white m-4 rounded shadow divide-y"></div>
+
+<!-- MODAL -->
+<div id="modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center">
+<div class="bg-white w-full max-w-xl p-6 rounded">
+
+<h2 id="modalTitle" class="text-lg font-semibold mb-4">Task</h2>
+
+<input id="taskTitle" placeholder="Title" class="w-full border p-2 mb-2"/>
+<input type="time" id="taskTime" class="w-full border p-2 mb-2"/>
+<input type="number" id="taskDuration" class="w-full border p-2 mb-2"/>
+
+<select id="taskType" class="w-full border p-2 mb-2">
+<option value="work">Work</option>
+<option value="learning">Learning</option>
+<option value="workout">Workout</option>
+</select>
+
+<select id="taskFrequency" class="w-full border p-2 mb-2">
+<option value="one-time">One Time</option>
+<option value="daily">Daily</option>
+<option value="weekly">Weekly</option>
+</select>
+
+<input type="date" id="taskStartDate" class="w-full border p-2 mb-2"/>
+<input type="date" id="taskEndDate" class="w-full border p-2 mb-2"/>
+
+<textarea id="taskNotes" class="w-full border p-2 mb-2"></textarea>
+
+<!-- UPDATE SCOPE -->
+<div id="updateScopeDiv" class="hidden mb-2">
+<label class="block font-medium mb-1">Update Scope</label>
+<select id="updateScope" class="w-full border p-2">
+<option value="single">This Day Only</option>
+<option value="all">All Occurrences</option>
+</select>
+</div>
+
+<p id="validationError" class="text-red-600 text-sm hidden"></p>
+
+<div class="flex justify-end gap-2 mt-4">
+<button onclick="closeModal()" class="px-4 py-2 border rounded">Cancel</button>
+<button onclick="saveTask()" class="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+</div>
+
+</div>
+</div>
+
+<script>
+let tasks = [];
+let editingTaskId = null;
+let editingDate = null;
+
+function init() {
+  const today = new Date().toISOString().split('T')[0];
+  startDate.value = endDate.value = taskStartDate.value = taskEndDate.value = today;
+  loadTasks();
+  renderTasks();
+}
+window.onload = init;
+
+/* STORAGE */
+function loadTasks() {
+  tasks = JSON.parse(localStorage.getItem("tasks") || "[]");
+}
+function saveTasksLS() {
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+}
+
+/* MODAL */
+function openModal(id=null, date=null) {
+  editingTaskId = id;
+  editingDate = date;
+  updateScopeDiv.classList.toggle("hidden", !id);
+
+  if (id) {
+    const t = tasks.find(x=>x.id===id);
+    taskTitle.value = t.title;
+    taskTime.value = t.time;
+    taskDuration.value = t.duration;
+    taskType.value = t.type;
+    taskFrequency.value = t.frequency;
+    taskStartDate.value = t.startDate;
+    taskEndDate.value = t.endDate;
+    taskNotes.value = t.notes || "";
+  }
+  modal.classList.remove("hidden");
+}
+
+function closeModal() {
+  modal.classList.add("hidden");
+  validationError.classList.add("hidden");
+  editingTaskId = editingDate = null;
+}
+
+/* SAVE TASK */
+function saveTask() {
+  const start = new Date(taskStartDate.value);
+  const end = new Date(taskEndDate.value);
+  const diff = (end - start) / (1000*60*60*24);
+
+  if (diff > 30) {
+    showError("You can plan only up to 30 days.");
+    return;
+  }
+
+  const data = {
+    title: taskTitle.value,
+    time: taskTime.value,
+    duration: +taskDuration.value,
+    type: taskType.value,
+    frequency: taskFrequency.value,
+    startDate: taskStartDate.value,
+    endDate: taskEndDate.value,
+    notes: taskNotes.value
+  };
+
+  if (!editingTaskId) {
+    tasks.push({ id: Date.now(), ...data, overrides:{} });
+  } else {
+    const t = tasks.find(x=>x.id===editingTaskId);
+    if (updateScope.value === "single") {
+      t.overrides ||= {};
+      t.overrides[editingDate] = data;
+    } else {
+      Object.assign(t, data);
+    }
+  }
+
+  saveTasksLS();
+  closeModal();
+  renderTasks();
+}
+
+/* RENDER */
+function renderTasks() {
+  tasksList.innerHTML = "";
+  const start = new Date(startDate.value);
+  const end = new Date(endDate.value);
+
+  tasks.forEach(t=>{
+    let d = new Date(t.startDate);
+    while (d <= end && d <= new Date(t.endDate)) {
+      const dateStr = d.toISOString().split("T")[0];
+      if (d >= start) {
+        const o = t.overrides?.[dateStr] || t;
+        tasksList.innerHTML += `
+        <div class="p-3 flex justify-between">
+          <div>
+            <b>${o.title}</b>
+            <div class="text-sm">${dateStr} ${o.time}</div>
+          </div>
+          <button onclick="openModal(${t.id},'${dateStr}')" class="text-blue-600">Edit</button>
+        </div>`;
+      }
+      d.setDate(d.getDate()+1);
+    }
+  });
+}
+
+/* ERROR */
+function showError(msg) {
+  validationError.textContent = msg;
+  validationError.classList.remove("hidden");
+}
+</script>
+
+</body>
+</html>
