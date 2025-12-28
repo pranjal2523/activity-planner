@@ -1,196 +1,900 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Activity Planner</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activity Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
-
-<body class="bg-slate-100 min-h-screen">
-
-<!-- HEADER -->
-<div class="bg-white shadow border-b p-4 flex justify-between">
-  <h1 class="text-xl font-bold">Activity Planner</h1>
-  <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded">+ Add Task</button>
-</div>
-
-<!-- DATE FILTER -->
-<div class="p-4 bg-white m-4 rounded shadow flex gap-2">
-  <input type="date" id="startDate"/>
-  <input type="date" id="endDate"/>
-</div>
-
-<!-- TASK LIST -->
-<div id="tasksList" class="bg-white m-4 rounded shadow divide-y"></div>
-
-<!-- MODAL -->
-<div id="modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center">
-<div class="bg-white w-full max-w-xl p-6 rounded">
-
-<h2 id="modalTitle" class="text-lg font-semibold mb-4">Task</h2>
-
-<input id="taskTitle" placeholder="Title" class="w-full border p-2 mb-2"/>
-<input type="time" id="taskTime" class="w-full border p-2 mb-2"/>
-<input type="number" id="taskDuration" class="w-full border p-2 mb-2"/>
-
-<select id="taskType" class="w-full border p-2 mb-2">
-<option value="work">Work</option>
-<option value="learning">Learning</option>
-<option value="workout">Workout</option>
-</select>
-
-<select id="taskFrequency" class="w-full border p-2 mb-2">
-<option value="one-time">One Time</option>
-<option value="daily">Daily</option>
-<option value="weekly">Weekly</option>
-</select>
-
-<input type="date" id="taskStartDate" class="w-full border p-2 mb-2"/>
-<input type="date" id="taskEndDate" class="w-full border p-2 mb-2"/>
-
-<textarea id="taskNotes" class="w-full border p-2 mb-2"></textarea>
-
-<!-- UPDATE SCOPE -->
-<div id="updateScopeDiv" class="hidden mb-2">
-<label class="block font-medium mb-1">Update Scope</label>
-<select id="updateScope" class="w-full border p-2">
-<option value="single">This Day Only</option>
-<option value="all">All Occurrences</option>
-</select>
-</div>
-
-<p id="validationError" class="text-red-600 text-sm hidden"></p>
-
-<div class="flex justify-end gap-2 mt-4">
-<button onclick="closeModal()" class="px-4 py-2 border rounded">Cancel</button>
-<button onclick="saveTask()" class="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
-</div>
-
-</div>
-</div>
-
-<script>
-let tasks = [];
-let editingTaskId = null;
-let editingDate = null;
-
-function init() {
-  const today = new Date().toISOString().split('T')[0];
-  startDate.value = endDate.value = taskStartDate.value = taskEndDate.value = today;
-  loadTasks();
-  renderTasks();
-}
-window.onload = init;
-
-/* STORAGE */
-function loadTasks() {
-  tasks = JSON.parse(localStorage.getItem("tasks") || "[]");
-}
-function saveTasksLS() {
-  localStorage.setItem("tasks", JSON.stringify(tasks));
-}
-
-/* MODAL */
-function openModal(id=null, date=null) {
-  editingTaskId = id;
-  editingDate = date;
-  updateScopeDiv.classList.toggle("hidden", !id);
-
-  if (id) {
-    const t = tasks.find(x=>x.id===id);
-    taskTitle.value = t.title;
-    taskTime.value = t.time;
-    taskDuration.value = t.duration;
-    taskType.value = t.type;
-    taskFrequency.value = t.frequency;
-    taskStartDate.value = t.startDate;
-    taskEndDate.value = t.endDate;
-    taskNotes.value = t.notes || "";
-  }
-  modal.classList.remove("hidden");
-}
-
-function closeModal() {
-  modal.classList.add("hidden");
-  validationError.classList.add("hidden");
-  editingTaskId = editingDate = null;
-}
-
-/* SAVE TASK */
-function saveTask() {
-  const start = new Date(taskStartDate.value);
-  const end = new Date(taskEndDate.value);
-  const diff = (end - start) / (1000*60*60*24);
-
-  if (diff > 30) {
-    showError("You can plan only up to 30 days.");
-    return;
-  }
-
-  const data = {
-    title: taskTitle.value,
-    time: taskTime.value,
-    duration: +taskDuration.value,
-    type: taskType.value,
-    frequency: taskFrequency.value,
-    startDate: taskStartDate.value,
-    endDate: taskEndDate.value,
-    notes: taskNotes.value
-  };
-
-  if (!editingTaskId) {
-    tasks.push({ id: Date.now(), ...data, overrides:{} });
-  } else {
-    const t = tasks.find(x=>x.id===editingTaskId);
-    if (updateScope.value === "single") {
-      t.overrides ||= {};
-      t.overrides[editingDate] = data;
-    } else {
-      Object.assign(t, data);
-    }
-  }
-
-  saveTasksLS();
-  closeModal();
-  renderTasks();
-}
-
-/* RENDER */
-function renderTasks() {
-  tasksList.innerHTML = "";
-  const start = new Date(startDate.value);
-  const end = new Date(endDate.value);
-
-  tasks.forEach(t=>{
-    let d = new Date(t.startDate);
-    while (d <= end && d <= new Date(t.endDate)) {
-      const dateStr = d.toISOString().split("T")[0];
-      if (d >= start) {
-        const o = t.overrides?.[dateStr] || t;
-        tasksList.innerHTML += `
-        <div class="p-3 flex justify-between">
-          <div>
-            <b>${o.title}</b>
-            <div class="text-sm">${dateStr} ${o.time}</div>
+<body class="bg-gradient-to-br from-slate-50 to-slate-100 min-h-screen">
+  
+  <!-- Header -->
+  <div class="bg-white shadow-sm border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 py-4">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center space-x-3">
+          <div class="bg-gradient-to-br from-blue-500 to-purple-600 p-2 rounded-xl">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
           </div>
-          <button onclick="openModal(${t.id},'${dateStr}')" class="text-blue-600">Edit</button>
-        </div>`;
-      }
-      d.setDate(d.getDate()+1);
+          <div>
+            <h1 class="text-2xl font-bold text-slate-900">Activity Planner</h1>
+            <p class="text-sm text-slate-500">Your Personal Productivity Manager</p>
+          </div>
+        </div>
+        <button onclick="openModal()" class="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all shadow-md">
+          <span class="text-xl mr-1">+</span> Add Task
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="max-w-7xl mx-auto px-4 py-6">
+    
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-500 mb-1">Completion</p>
+            <p id="statCompletion" class="text-2xl font-bold text-slate-900">0%</p>
+          </div>
+          <div class="bg-green-100 p-3 rounded-lg">📈</div>
+        </div>
+      </div>
+      
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-500 mb-1">Tasks Done</p>
+            <p id="statTasks" class="text-2xl font-bold text-slate-900">0/0</p>
+          </div>
+          <div class="bg-blue-100 p-3 rounded-lg">✓</div>
+        </div>
+      </div>
+      
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-500 mb-1">Streak</p>
+            <p id="statStreak" class="text-2xl font-bold text-slate-900">0 days</p>
+          </div>
+          <div class="bg-orange-100 p-3 rounded-lg">🔥</div>
+        </div>
+      </div>
+      
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-500 mb-1">Free Time Today</p>
+            <p id="statFreeTime" class="text-2xl font-bold text-slate-900">0h</p>
+          </div>
+          <div class="bg-purple-100 p-3 rounded-lg">⚡</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 mb-6">
+      <div class="flex flex-col sm:flex-row gap-4">
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-slate-700 mb-2">Date Range Filter</label>
+          <div class="flex gap-2 flex-wrap">
+            <input type="date" id="startDate" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="flex items-center text-slate-500">to</span>
+            <input type="date" id="endDate" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+        <div class="flex gap-2 items-end flex-wrap">
+          <button onclick="setQuickFilter('today')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium">Today</button>
+          <button onclick="setQuickFilter('week')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium">Week</button>
+          <button onclick="setQuickFilter('month')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium">Month</button>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- Download Section -->
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 mb-6">
+      <h3 class="text-lg font-semibold text-slate-900 mb-3">📥 Download Summary</h3>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <button onclick="downloadSummary('daily')" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+          Download Daily Summary (PDF)
+        </button>
+        <button onclick="downloadSummary('weekly')" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+          Download Weekly Summary (PDF)
+        </button>
+        <button onclick="downloadSummary('range')" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+          Download Range Summary (PDF)
+        </button>
+      </div>
+    </div>
+    
+    <!-- Tasks List -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-lg font-semibold text-slate-900">Tasks Schedule</h2>
+      </div>
+      
+      <div id="tasksList" class="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+        <div class="p-8 text-center">
+          <p class="text-slate-500">Loading tasks...</p>
+        </div>
+      </div>
+    </div>
+  
+    <!-- Free Slots & Time Distribution -->
+    <div class="grid lg:grid-cols-3 gap-6 mb-6">
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">⏰ Free Slots Today</h3>
+        <div id="freeSlots" class="space-y-2">
+          <p class="text-sm text-slate-500">Loading...</p>
+        </div>
+      </div>
+
+      <div class="lg:col-span-2 bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">📊 Time Distribution Today</h3>
+        <canvas id="pieChart" width="400" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Weekly Progress Chart -->
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 mb-6">
+      <h3 class="text-lg font-semibold text-slate-900 mb-4">📈 Weekly Progress</h3>
+      <canvas id="weeklyChart" width="400" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Task Modal -->
+  <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl max-w-2xl w-full shadow-2xl">
+      <div class="flex items-center justify-between p-4 border-b border-slate-200">
+        <h2 id="modalTitle" class="text-xl font-semibold text-slate-900">New Task</h2>
+        <button onclick="closeModal()" class="p-2 hover:bg-slate-100 rounded-lg">✕</button>
+      </div>
+      
+      <div class="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Task Title</label>
+          <input type="text" id="taskTitle" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Morning workout">
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Time</label>
+            <input type="time" id="taskTime" value="09:00" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Duration (minutes)</label>
+            <input type="number" id="taskDuration" value="60" min="5" step="5" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+            <select id="taskType" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="work">💼 Work</option>
+              <option value="workout">💪 Workout</option>
+              <option value="diet">❤️ Diet</option>
+              <option value="sleep">🌙 Sleep</option>
+              <option value="hobby">🔥 Hobby</option>
+              <option value="learning">🧠 Learning</option>
+              <option value="break">☕ Break</option>
+              <option value="other">🎯 Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Frequency</label>
+            <select id="taskFrequency" onchange="toggleCustomDays()" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="one-time">One Time</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="custom">Every X Days</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="customDaysDiv" class="hidden">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Repeat Every X Days</label>
+          <input type="number" id="customDays" value="2" min="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+            <input type="date" id="taskStartDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
+            <input type="date" id="taskEndDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Notes (Optional)</label>
+          <textarea id="taskNotes" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Add any notes..."></textarea>
+        </div>
+        
+        <div id="validationError" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-sm text-red-600"></p>
+        </div>
+        
+        <div class="flex space-x-3 pt-4">
+          <button onclick="closeModal()" class="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50">
+            Cancel
+          </button>
+          <button onclick="saveTask()" class="flex-1 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700">
+            Save Task
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl max-w-md w-full shadow-2xl">
+      <div class="p-6">
+        <div class="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mx-auto mb-4">
+          <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-slate-900 text-center mb-2">Delete Task</h3>
+        <p class="text-sm text-slate-600 text-center mb-6">Choose deletion option:</p>
+        
+        <div class="space-y-3">
+          <button onclick="confirmDelete('today')" class="w-full px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
+            Delete for Today Only
+          </button>
+          <button onclick="confirmDelete('all')" class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
+            Delete All Occurrences
+          </button>
+          <button onclick="closeDeleteModal()" class="w-full px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { jsPDF } = window.jspdf;
+    
+    // Global state
+    let tasks = [];
+    let editingTaskId = null;
+    let deletingTaskId = null;
+    let deletingTaskDate = null;
+    let pieChartInstance = null;
+    let weeklyChartInstance = null;
+
+    const taskTypes = {
+      work: { label: 'Work', icon: '💼', color: '#3B82F6' },
+      workout: { label: 'Workout', icon: '💪', color: '#10B981' },
+      diet: { label: 'Diet', icon: '❤️', color: '#EF4444' },
+      sleep: { label: 'Sleep', icon: '🌙', color: '#8B5CF6' },
+      hobby: { label: 'Hobby', icon: '🔥', color: '#F59E0B' },
+      learning: { label: 'Learning', icon: '🧠', color: '#EC4899' },
+      break: { label: 'Break', icon: '☕', color: '#6B7280' },
+      other: { label: 'Other', icon: '🎯', color: '#14B8A6' }
+    };
+
+    // Initialize
+    function init() {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('startDate').value = today;
+      document.getElementById('endDate').value = today;
+      document.getElementById('taskStartDate').value = today;
+      document.getElementById('taskEndDate').value = today;
+      
+      loadTasks();
+      renderTasks();
+      updateStats();
+      updateCharts();
+      
+      document.getElementById('startDate').addEventListener('change', () => {
+        renderTasks();
+        updateStats();
+        updateCharts();
+      });
+      document.getElementById('endDate').addEventListener('change', () => {
+        renderTasks();
+        updateStats();
+        updateCharts();
+      });
     }
-  });
-}
 
-/* ERROR */
-function showError(msg) {
-  validationError.textContent = msg;
-  validationError.classList.remove("hidden");
-}
-</script>
+    // Local Storage
+    function loadTasks() {
+      const saved = localStorage.getItem('activityPlannerTasks');
+      tasks = saved ? JSON.parse(saved) : [];
+    }
 
+    function saveTasks() {
+      localStorage.setItem('activityPlannerTasks', JSON.stringify(tasks));
+    }
+
+    // Modal functions
+    function openModal(taskId = null) {
+      editingTaskId = taskId;
+      const modal = document.getElementById('modal');
+      hideValidationError();
+      
+      if (taskId) {
+        const task = tasks.find(t => t.id === taskId);
+        document.getElementById('modalTitle').textContent = 'Edit Task';
+        document.getElementById('taskTitle').value = task.title;
+        document.getElementById('taskTime').value = task.time;
+        document.getElementById('taskDuration').value = task.duration;
+        document.getElementById('taskStartDate').value = task.startDate;
+        document.getElementById('taskEndDate').value = task.endDate;
+        document.getElementById('taskType').value = task.type;
+        document.getElementById('taskFrequency').value = task.frequency;
+        document.getElementById('customDays').value = task.customDays || 2;
+        document.getElementById('taskNotes').value = task.notes || '';
+        toggleCustomDays();
+      } else {
+        document.getElementById('modalTitle').textContent = 'New Task';
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('taskTitle').value = '';
+        document.getElementById('taskTime').value = '09:00';
+        document.getElementById('taskDuration').value = 60;
+        document.getElementById('taskStartDate').value = today;
+        document.getElementById('taskEndDate').value = today;
+        document.getElementById('taskType').value = 'work';
+        document.getElementById('taskFrequency').value = 'one-time';
+        document.getElementById('taskNotes').value = '';
+        toggleCustomDays();
+      }
+      
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+      editingTaskId = null;
+      hideValidationError();
+    }
+
+    function toggleCustomDays() {
+      const freq = document.getElementById('taskFrequency').value;
+      document.getElementById('customDaysDiv').classList.toggle('hidden', freq !== 'custom');
+      document.getElementById('taskEndDate').disabled = freq === 'one-time';
+    }
+
+    function showValidationError(message) {
+      const errorDiv = document.getElementById('validationError');
+      errorDiv.querySelector('p').textContent = message;
+      errorDiv.classList.remove('hidden');
+    }
+
+    function hideValidationError() {
+      document.getElementById('validationError').classList.add('hidden');
+    }
+
+    // Time overlap validation
+    function checkTimeOverlap(newTask, excludeTaskId = null) {
+      const newStart = timeToMinutes(newTask.time);
+      const newEnd = newStart + newTask.duration;
+      
+      const startDate = new Date(newTask.startDate);
+      const endDate = newTask.frequency === 'one-time' ? startDate : new Date(newTask.endDate);
+      
+      for (const task of tasks) {
+        if (excludeTaskId && task.id === excludeTaskId) continue;
+        
+        const taskStart = new Date(task.startDate);
+        const taskEnd = task.frequency === 'one-time' ? taskStart : new Date(task.endDate);
+        
+        // Check if date ranges overlap
+        if (startDate > taskEnd || endDate < taskStart) continue;
+        
+        // Check if they occur on the same day based on frequency
+        const overlappingDates = getOverlappingDates(newTask, task, startDate, endDate, taskStart, taskEnd);
+        
+        if (overlappingDates.length > 0) {
+          const existingStart = timeToMinutes(task.time);
+          const existingEnd = existingStart + task.duration;
+          
+          // Check if times overlap
+          if (!(newEnd <= existingStart || newStart >= existingEnd)) {
+            return {
+              overlap: true,
+              task: task,
+              dates: overlappingDates
+            };
+          }
+        }
+      }
+      
+      return { overlap: false };
+    }
+
+    function getOverlappingDates(task1, task2, start1, end1, start2, end2) {
+      const overlappingDates = [];
+      const maxStart = new Date(Math.max(start1, start2));
+      const minEnd = new Date(Math.min(end1, end2));
+      
+      let currentDate = new Date(maxStart);
+      
+      while (currentDate <= minEnd) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        
+        if (occursOnDate(task1, currentDate, start1) && occursOnDate(task2, currentDate, start2)) {
+          overlappingDates.push(dateStr);
+          if (overlappingDates.length >= 3) break; // Limit for performance
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      return overlappingDates;
+    }
+
+    function occursOnDate(task, checkDate, taskStart) {
+      const daysDiff = Math.floor((checkDate - taskStart) / (1000 * 60 * 60 * 24));
+      
+      switch(task.frequency) {
+        case 'one-time':
+          return daysDiff === 0;
+        case 'daily':
+          return true;
+        case 'weekly':
+          return daysDiff % 7 === 0;
+        case 'monthly':
+          return checkDate.getDate() === taskStart.getDate();
+        case 'custom':
+          return daysDiff % (task.customDays || 2) === 0;
+        default:
+          return false;
+      }
+    }
+
+    function timeToMinutes(timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    }
+
+    // Task functions
+    function saveTask() {
+      const title = document.getElementById('taskTitle').value.trim();
+      if (!title) {
+        showValidationError('Please enter a task title');
+        return;
+      }
+
+      const newTask = {
+        id: editingTaskId || Date.now(),
+        title,
+        time: document.getElementById('taskTime').value,
+        duration: parseInt(document.getElementById('taskDuration').value),
+        startDate: document.getElementById('taskStartDate').value,
+        endDate: document.getElementById('taskEndDate').value,
+        type: document.getElementById('taskType').value,
+        frequency: document.getElementById('taskFrequency').value,
+        customDays: parseInt(document.getElementById('customDays').value) || 2,
+        notes: document.getElementById('taskNotes').value,
+        completed: editingTaskId ? tasks.find(t => t.id === editingTaskId).completed : false
+      };
+
+      // Validate time overlap
+      const overlapCheck = checkTimeOverlap(newTask, editingTaskId);
+      if (overlapCheck.overlap) {
+        const conflictTask = overlapCheck.task;
+        const datesList = overlapCheck.dates.slice(0, 2).join(', ');
+        showValidationError(
+          `Time conflict with "${conflictTask.title}" (${conflictTask.time}, ${conflictTask.duration}m) on ${datesList}${overlapCheck.dates.length > 2 ? '...' : ''}`
+        );
+        return;
+      }
+
+      if (editingTaskId) {
+        tasks = tasks.map(t => t.id === editingTaskId ? newTask : t);
+      } else {
+        tasks.push(newTask);
+      }
+
+      saveTasks();
+      closeModal();
+      renderTasks();
+      updateStats();
+      updateCharts();
+    }
+
+    function deleteTask(id, date) {
+      deletingTaskId = id;
+      deletingTaskDate = date;
+      document.getElementById('deleteModal').classList.remove('hidden');
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').classList.add('hidden');
+      deletingTaskId = null;
+      deletingTaskDate = null;
+    }
+
+    function confirmDelete(option) {
+      if (option === 'today') {
+        // Delete only for specific date by marking it as excluded
+        const task = tasks.find(t => t.id === deletingTaskId);
+        if (task) {
+          if (!task.excludedDates) task.excludedDates = [];
+          if (!task.excludedDates.includes(deletingTaskDate)) {
+            task.excludedDates.push(deletingTaskDate);
+          }
+          saveTasks();
+        }
+      } else if (option === 'all') {
+        // Delete all occurrences
+        tasks = tasks.filter(t => t.id !== deletingTaskId);
+        saveTasks();
+      }
+      
+      closeDeleteModal();
+      renderTasks();
+      updateStats();
+      updateCharts();
+    }
+
+    function toggleComplete(id, date) {
+      const task = tasks.find(t => t.id === id);
+      if (task) {
+        task.completed = !task.completed;
+        saveTasks();
+        renderTasks();
+        updateStats();
+        updateCharts();
+      }
+    }
+
+    // Expand tasks based on frequency
+    function getExpandedTasks() {
+      const startDate = new Date(document.getElementById('startDate').value);
+      const endDate = new Date(document.getElementById('endDate').value);
+      const expanded = [];
+
+      tasks.forEach(task => {
+        const taskStart = new Date(task.startDate);
+        const taskEnd = task.frequency === 'one-time' ? taskStart : new Date(task.endDate);
+        let currentDate = new Date(Math.max(taskStart, startDate));
+
+        while (currentDate <= endDate && currentDate <= taskEnd) {
+          const dateStr = currentDate.toISOString().split('T')[0];
+          
+          // Check if date is excluded
+          if (task.excludedDates && task.excludedDates.includes(dateStr)) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            continue;
+          }
+          
+          let shouldInclude = false;
+          const daysDiff = Math.floor((currentDate - taskStart) / (1000 * 60 * 60 * 24));
+
+          switch(task.frequency) {
+            case 'one-time':
+              shouldInclude = currentDate.toISOString().split('T')[0] === task.startDate;
+              break;
+            case 'daily':
+              shouldInclude = true;
+              break;
+            case 'weekly':
+              shouldInclude = daysDiff % 7 === 0;
+              break;
+            case 'monthly':
+              shouldInclude = currentDate.getDate() === taskStart.getDate();
+              break;
+            case 'custom':
+              shouldInclude = daysDiff % (task.customDays || 2) === 0;
+              break;
+          }
+
+          if (shouldInclude) {
+            expanded.push({
+              ...task,
+              date: dateStr,
+              time: task.time,
+              duration: task.duration,
+              completed: task.completed,
+              type: task.type
+            });
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      });
+      return expanded;
+    }
+    // Render tasks
+    function renderTasks() {
+      const tasksList = document.getElementById('tasksList');
+      tasksList.innerHTML = '';
+      const expandedTasks = getExpandedTasks();
+      if (expandedTasks.length === 0) {
+        tasksList.innerHTML = '<div class="p-8 text-center"><p class="text-slate-500">No tasks found for the selected date range.</p></div>';
+        return;
+      }
+      expandedTasks.forEach(task => {
+        const taskDiv = document.createElement('div');
+        taskDiv.className = 'p-4 flex items-center justify-between hover:bg-slate-50 transition cursor-pointer';
+        taskDiv.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 flex items-center justify-center rounded-full" style="background-color: ${taskTypes[task.type].color};">
+              <span class="text-white
+">${taskTypes[task.type].icon}</span>
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-900">${task.title}</h3>
+              <p class="text-sm text-slate-500">${task.date} at ${task.time} (${task.duration} min)</p>
+              <p class="text-sm text-slate-500">${taskTypes[task.type].label}</p>
+              ${task.notes ? `<p class="text-sm text-slate-500 mt-1">${task.notes}</p>` : ''}
+            </div>
+          </div>
+          <div class="flex items-center space-x-3">
+            <button onclick="toggleComplete(${task.id}, '${task.date}')" class="px-3 py-1 rounded-lg ${task.completed ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'} hover:bg-${task.completed ? 'green' : 'gray'}-200 transition">
+              ${task.completed ? '✔️ Completed' : '❌ Incomplete'}
+            </button>
+            <button onclick="openModal(${task.id})" class="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition">
+              ✏️ Edit
+            </button>
+            <button onclick="deleteTask(${task.id}, '${task.date}')" class="px-3 py-1 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition">
+              🗑️ Delete
+            </button>
+          </div>
+        `;
+        tasksList.appendChild(taskDiv);
+      });
+    }
+    // Update stats
+    function updateStats() {
+      const expandedTasks = getExpandedTasks();
+      const today = new Date().toISOString().split('T')[0];
+      const todayTasks = expandedTasks.filter(t => t.date === today);
+      const completedTasks = todayTasks.filter(t => t.completed);
+      const totalDuration = todayTasks.reduce((sum, t) => sum + t.duration, 0);
+      const freeTime = Math.max(0, 1440 - totalDuration); // 1440 minutes in a day
+      const completionRate = todayTasks.length > 0 ? Math.round((completedTasks.length / todayTasks.length) * 100) : 0;
+      const streak = calculateStreak(expandedTasks, today);
+      const totalTasks = expandedTasks.length;
+      document.getElementById('statCompletion').textContent = `${completionRate}%`;
+      document.getElementById('statTasks').textContent = `${completedTasks.length}/${totalTasks}`;
+      document.getElementById('statStreak').textContent = `${streak} days`;
+      document.getElementById('statFreeTime').textContent = `${Math.floor(freeTime / 60)}h ${freeTime % 60}m`;
+    } 
+    function calculateStreak(tasks, today) {
+      const todayDate = new Date(today);
+      let streak = 0;
+      for (let i = 0; i < 30; i++) {
+        const dateStr = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() - i).toISOString().split('T')[0];
+        const dailyTasks = tasks.filter(t => t.date === dateStr && t.completed);
+        if (dailyTasks.length > 0) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+      return streak;
+    }
+    // Update charts
+    function updateCharts() {
+      const expandedTasks = getExpandedTasks();
+      const today = new Date().toISOString().split('T')[0];
+      const todayTasks = expandedTasks.filter(t => t.date === today);
+      const timeDistribution = {};
+      const freeSlots = [];
+      const totalDuration = todayTasks.reduce((sum, t) => sum + t.duration, 0);
+      const totalFreeTime = 1440 - totalDuration; // 1440 minutes in
+      const timeSlots = Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        tasks: [],
+        free: true
+      }));
+      todayTasks.forEach(task => {
+        const startHour = parseInt(task.time.split(':')[0]);
+        const endHour = startHour + Math.ceil(task.duration / 60);
+        for (let i = startHour; i < endHour; i++) {
+          if (timeSlots[i]) {
+            timeSlots[i].tasks.push(task);
+            timeSlots[i].free = false;
+          }
+        }
+      });
+      timeSlots.forEach(slot => {
+        if (slot.free) {
+          freeSlots.push(`${slot.hour}:00 - ${slot.hour + 1}:00`);
+        } else {
+          slot.tasks.forEach(task => {
+            if (!timeDistribution[task.type]) {
+              timeDistribution[task.type] = 0;
+            }
+            timeDistribution[task.type] += task.duration;
+          });
+        }
+      });
+      renderFreeSlots(freeSlots);
+      renderPieChart(timeDistribution);
+      renderWeeklyChart(expandedTasks);
+    }
+    function renderFreeSlots(slots) {
+      const freeSlotsDiv = document.getElementById('freeSlots');
+      freeSlotsDiv.innerHTML = '';
+      if (slots.length === 0) {
+        freeSlotsDiv.innerHTML = '<p class="text-sm text-slate-500">No free slots available today.</p>';
+        return;
+      }
+      slots.forEach(slot => {
+        const slotDiv = document.createElement('p');
+        slotDiv.className = 'text-sm text-slate-600';
+        slotDiv.textContent = slot;
+        freeSlotsDiv.appendChild(slotDiv);
+      });
+    }
+    function renderPieChart(data) {
+      const ctx = document.getElementById('pieChart').getContext('2d');
+      if (pieChartInstance) {
+        pieChartInstance.destroy();
+      }
+      pieChartInstance = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: Object.keys(data).map(key => taskTypes[key].label),
+          datasets: [{
+            data: Object.values(data),
+            backgroundColor: Object.keys(data).map(key => taskTypes[key].color),
+            borderColor: '#fff',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: {
+                color: '#374151',
+                font: {
+                  size: 14
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(tooltipItem) {
+                  const label = tooltipItem.label || '';
+                  const value = tooltipItem.raw || 0;
+                  return `${label}: ${value} min`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    function renderWeeklyChart(tasks) {
+      const ctx = document.getElementById('weeklyChart').getContext('2d');
+      if (weeklyChartInstance) {
+        weeklyChartInstance.destroy();
+      }
+      const weeklyData = Array(7).fill(0);
+      const today = new Date();
+      tasks.forEach(task => {
+        const taskDate = new Date(task.date);
+        const dayDiff = Math.floor((today - taskDate) / (1000 * 60 * 60 * 24));
+        if (dayDiff >= 0 && dayDiff < 7) {
+          weeklyData[6 - dayDiff] += task.duration;
+        }
+      });
+      weeklyChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+          datasets: [{
+            label: 'Total Duration (min)',
+            data: weeklyData,
+            backgroundColor: '#3B82F6',
+            borderColor: '#2563EB',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                color: '#374151',
+                font: {
+                  size: 14
+                }
+              }
+            },
+            x: {
+              ticks: {
+                color: '#374151',   
+                font: {
+                  size: 14
+                }
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(tooltipItem) {
+                  const label = tooltipItem.dataset.label || '';
+                  const value = tooltipItem.raw || 0;
+                  return `${label}: ${value} min`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    // Download summary
+    function downloadSummary(type) {
+      const doc = new jsPDF();
+      const today = new Date().toISOString().split('T')[0];
+      const expandedTasks = getExpandedTasks();
+      let content = '';
+      if (type === 'daily') {
+        content = `Daily Summary for ${today}\n\n`;
+        const todayTasks = expandedTasks.filter(t => t.date === today);
+        if (todayTasks.length === 0) {
+          content += 'No tasks completed today.\n';
+        } else {
+          todayTasks.forEach(task => {
+            content += `- ${task.title} (${task.time}, ${task.duration} min)\n`;
+          });
+        }
+      } else if (type === 'weekly') {
+        content = `Weekly Summary (Last 7 Days)\n\n`;
+        const weeklyTasks = expandedTasks.filter(t => {
+          const taskDate = new Date(t.date);
+          return taskDate >= new Date(today - 6 * 24 * 60 * 60 * 1000);
+        });
+        if (weeklyTasks.length === 0) {
+          content += 'No tasks completed in the last 7 days.\n';
+        } else {
+          weeklyTasks.forEach(task => {
+            content += `- ${task.title} (${task.date}, ${task.time}, ${task.duration} min)\n`;
+          });
+        }
+      } else if (type === 'range') {
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        content = `Summary from ${startDate} to ${endDate}\n\n`;
+        const rangeTasks = expandedTasks.filter(t => {
+          const taskDate = new Date(t.date);
+          return taskDate >= new Date(startDate) && taskDate <= new Date(endDate);
+        });
+        if (rangeTasks.length === 0) {
+          content += 'No tasks completed in the selected date range.\n';
+        } else {
+          rangeTasks.forEach(task => {
+            content += `- ${task.title} (${task.date}, ${task.time}, ${task.duration} min)\n`;
+          });
+        }
+      }
+      doc.text(content, 10, 10);
+      doc.save(`${type}_summary.pdf`);
+    }
+    // Initialize on page load
+    window.onload = init;
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chart.js/3.7.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>
